@@ -43,6 +43,7 @@ void WriteRepeatedFieldUsingAccessors(const protobuf::FieldDescriptor* field,
       output(
           R"cc(
             using $0Access::add_$1;
+            using $0Access::add_alias_$1;
             using $0Access::mutable_$1;
           )cc",
           class_name, resolved_field_name);
@@ -89,6 +90,10 @@ void WriteRepeatedFieldsInMessageHeader(const protobuf::Descriptor* desc,
           const ::hpb::RepeatedField<const $4>::CProxy $2() const;
           ::hpb::Ptr<::hpb::RepeatedField<$4>> mutable_$2();
           absl::StatusOr<$0> add_$2();
+          /**
+           * TODO: add docstring
+           */
+          void add_alias_$2($0 target);
           $0 mutable_$2(size_t index) const;
         )cc",
         MessagePtrConstType(field, /* const */ false),   // $0
@@ -151,11 +156,40 @@ void WriteRepeatedMessageAccessor(const protobuf::Descriptor* message,
           }
           return hpb::interop::upb::MakeHandle<$4>((upb_Message*)new_msg, $5);
         }
+
+        void $0::add_alias_$2($1 target) {
+          // TODO: remove this new -> delete hack!
+          auto new_msg = $3_add_$6(msg_, $5);
+          (void)new_msg;
+
+          upb_Array* repeated_messages = upb_Message_GetMutableArray(
+              UPB_UPCAST(msg_),
+              upb_MiniTable_GetFieldByIndex($7::minitable(), $8));
+          // TODO: this didn't work; pair with Haberman
+          /*if (!repeated_messages) {
+            repeated_messages = upb_Array_New(arena_, kUpb_CType_Message);
+            upb_Array_Resize(repeated_messages, 10, arena_);
+          }*/
+          upb_MessageValue value;
+          value.msg_val = hpb::interop::upb::GetMessage(target);
+          upb_Array_Append(repeated_messages, value, arena_);
+          // TODO: delete following lines
+          auto sz = upb_Array_Size(repeated_messages);
+          upb_Array_Delete(repeated_messages, sz - 2, 1);
+          /*upb_Message_SetBaseFieldMessage(
+              x,
+              upb_MiniTable_GetFieldByIndex($7::minitable(), $8),
+              hpb::interop::upb::GetMessage(target));
+         /* return ::hpb::interop::upb::MakeCHandle<$4>(
+              (upb_Message*)*(ptr + index), arena_);
+          ;*/
+          //$3_add_alias_$6(msg_, hpb::interop::upb::GetMessage(target), $5);
+        }
       )cc",
       class_name, MessagePtrConstType(field, /* const */ false),
       resolved_field_name, MessageName(message),
       MessageBaseType(field, /* maybe_const */ false), arena_expression,
-      upbc_name);
+      upbc_name, ClassName(message), field->index());
   output(
       R"cc(
         $1 $0::mutable_$2(size_t index) const {
